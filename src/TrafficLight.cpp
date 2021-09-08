@@ -11,7 +11,7 @@ T MessageQueue<T>::receive()
     std::unique_lock<std::mutex> uLock(_mutex);
     _condition.wait(uLock, [this] { return !_queue.empty(); }); 
     T message = std::move(_queue.back());
-    _queue.pop_back();
+    _queue.clear();
     return message;
 }
 
@@ -19,7 +19,7 @@ template <typename T>
 void MessageQueue<T>::send(T &&msg)
 {
     std::lock_guard<std::mutex> lock(_mutex);
-    _queue.push_back(std::move(msg));
+    _queue.emplace_back(msg);
     _condition.notify_one(); 
 }
 
@@ -36,7 +36,6 @@ void TrafficLight::waitForGreen()
 {
     while(true)
     {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
         if(TrafficLightPhase::green == _messageQueue.receive()) return;
     }
     
@@ -60,14 +59,24 @@ void TrafficLight::simulate()
 // virtual function which is executed in a thread
 void TrafficLight::cycleThroughPhases()
 {
+    std::random_device rd;
+    std::mt19937 eng(rd());
+    std::uniform_real_distribution<> dist(4.0,6.0);
+    double cycle_duration = dist(eng);
+    auto cycle_start_time = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> cycle_elapsed_time;
     while(true)
     {
-        int r = 4 + (rand() % 3);
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000*r));
-        (getCurrentPhase() == TrafficLightPhase::red)?
-                     setCurrentPhase(TrafficLightPhase::green):
-                     setCurrentPhase(TrafficLightPhase::red);
-        _messageQueue.send(std::move(getCurrentPhase()));
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        cycle_elapsed_time = std::chrono::high_resolution_clock::now() - cycle_start_time;
+        if(cycle_elapsed_time.count() > cycle_duration)
+        { 
+             (getCurrentPhase() == TrafficLightPhase::red)?
+                       setCurrentPhase(TrafficLightPhase::green):
+                       setCurrentPhase(TrafficLightPhase::red);
+             _messageQueue.send(std::move(getCurrentPhase()));
+             cycle_start_time = std::chrono::high_resolution_clock::now();
+             cycle_duration = dist(eng);
+        }
     }
 }
